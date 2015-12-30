@@ -22,7 +22,7 @@ method = 'SVMl1';
 exps = 1 %orginally five
 
 % Number of labeled pixels
-pct = 0.75;
+pct = 0.99999;
 % if pct < 1 it is a percentage per class
 % if pct is > 1 it is a number of pixels per class
 
@@ -39,18 +39,18 @@ homeDir = '\\KU-ECE-F329-01\Box Sync\ANN Segmentation\ALI [large] data\';
 
 testMaskNo = 1; %default 1
 testMosaicNo = 1; %default 1
-                  
+
 
 for setNo= 1:noSets
     for maskNo=1:noMasks
         for mosaicNo=1:noMosaics
-            if (maskNo == testMaskNo && mosaicNo == testMosaicNo)
+            if (maskNo == 2 && mosaicNo == 1)
                 [inputImg, GT] = openMaskAndImage(homeDir, setNo, maskNo, mosaicNo, noBands);
                 GT = double(GT);
                 % - data are in immRaw (rows x cols x bands), there are 20 noise bands in
                 % it (you may chose to keep them, to show tat they are never selected :)).
                 % - ground reference is in GT (rows x cols)
-
+                
                 Sz = size(inputImg);
                 SS = Sz;
                 
@@ -119,7 +119,7 @@ for setNo= 1:noSets
                     options.win = 3; %buffer around the training pixels to avoid contiguous test pixels (pix).
                     options.bandweights = ones(1,Sz(3));%initialize band weights (in case we want to influence probability of selection later)
                     options.currentReal = run;
- 
+                    
                     %% Learn the features and the classifier
                     
                     % Prepare sets for classif
@@ -173,9 +173,65 @@ for setNo= 1:noSets
                             t= toc;
                             %in svm.feat we find the interesting features.
                             
+                            [inputImg, GT] = openMaskAndImage(homeDir, setNo, testMaskNo, testMosaicNo, noBands);
+                            GT = double(GT);
+                            % - data are in immRaw (rows x cols x bands), there are 20 noise bands in
+                            % it (you may chose to keep them, to show tat they are never selected :)).
+                            % - ground reference is in GT (rows x cols)
+                            
+                            Sz = size(inputImg);
+                            SS = Sz;
+                            
+                            Y = GT(:);
+                            YY = find(Y > 0);
+                            YYY = Y(YY);
+                            
+                            clear infoFeatures
+                            pct = 0; % if pct < 1 it is a percentage per class
+                            
+                            X = reshape(inputImg,Sz(1)*Sz(2),Sz(3));
+                            d = size(X,2);
+                            
+                            
+                            %extract training pixels
+                            [~,~,~,~, indices] = ppc(X(YY,1),YYY,pct,setsr);
+                            ct = find(indices == 1);
+                            %cv = find(indices == 2);
+                            
+                            
+                            %app = training / test = test
+                            X2=(X-ones(size(X,1),1)*mean(X))./(ones(size(X,1),1)*std(X));
+                            xapp = X2(YY(ct),:);
+                            yapp = YYY((ct));
+                            %xtest = X2(YY(cv),:);
+                            %ytest = YYY((cv));
+                            
+                            clear X2
+                            
+                            InfoFeatures.type='original_l1';
+                            InfoFeatures.X = X;
+                            InfoFeatures.Y = Y;
+                            InfoFeatures.YY = YY;
+                            InfoFeatures.Sz = Sz;
+                            InfoFeatures.ct = ct;
+                            %InfoFeatures.cv = cv;
+                            InfoFeatures.cl = 0;
+                            
+                            %Create a mask for test pixels (ym)
+                            ym = Y;
+                            ym(YY(ct)) = -1;
+                            ym = reshape(abs(1-double(ym == -1)),Sz(1),Sz(2));
+                            se = strel('square',options.win);
+                            ym = imerode(ym,se);
+                            yt = max(0,ym(:).*InfoFeatures.Y(:)); %mask for spatially contiguous pixels
+                            InfoFeatures.ym = yt;
                             
                             [~,map]=inflinearsvmval_manybands(InfoFeatures,svm);
-                            figure(setNo), imshow(reshape(map,Sz(1),Sz(2)),[]);
+                            map = reshape(map,Sz(1),Sz(2));
+                            figure(setNo), imshow(map,[]);
+                            
+                            imwrite(uint16(map), ['./results/seg' , num2str(setNo), '_', num2str(testMaskNo),'_', num2str(testMosaicNo),'.png'])
+
                             
                             % here use your favourite accuracy test code between
                             % - true labels: yt(yt>0)
@@ -190,7 +246,7 @@ for setNo= 1:noSets
                                 ActiveFeat{run,c} = perIter{1,c}{1,end}.feat;
                             end
                             disp(['AS,' options.classifMethod ', K, realization ' num2str(run) '=' num2str(res{run}.num.Kappa)])
-                           %}
+                            %}
                             
                         case 'MLCl1l2'
                             tic
@@ -209,13 +265,13 @@ for setNo= 1:noSets
                             % ActiveFeat{r} contains the final active set)
                             
                             disp(['AS,' options.classifMethod ', K, realization ' num2str(run) '=' num2str(res{run}{end}.num.Kappa)])
-                     
+                            
                     end
                     
                     % Validation after selection
-                    ct_sets = [ct_sets ct];
+                    %ct_sets = [ct_sets ct];
                     %cv_sets = [cv_sets cv];
-                    t_sets = [t_sets t];
+                    %t_sets = [t_sets t];
                     
                     
                     %save(['./res' options.classifMethod '_' num2str(pct) 'perclass.mat'],'res','ct_sets','cv_sets','t_sets','options','ActiveFeat')
